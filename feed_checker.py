@@ -14,13 +14,30 @@ BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
 RECIPIENT_EMAILS = [e.strip() for e in os.environ.get("RECIPIENT_EMAILS", "").split(",") if e.strip()]
 
 print("Fetching DveDeti feed...")
-try:
-    r = requests.get(FEED_URL, timeout=30)
-    r.raise_for_status()
-    xml = r.content.decode('utf-8')
-except Exception as e:
-    print(f"FAILED to fetch feed: {e}")
-    sys.exit(1)
+print(f"URL: {FEED_URL}")
+
+# Увеличиваем таймаут до 120 секунд + добавляем ретраи
+max_retries = 3
+timeout = 120  # 2 минуты
+
+for attempt in range(max_retries):
+    try:
+        print(f"Attempt {attempt + 1}/{max_retries}...")
+        r = requests.get(FEED_URL, timeout=timeout)
+        r.raise_for_status()
+        xml = r.content.decode('utf-8')
+        print(f"✓ Feed loaded successfully ({len(xml)} bytes)")
+        break
+    except requests.exceptions.Timeout:
+        print(f"Timeout on attempt {attempt + 1}")
+        if attempt == max_retries - 1:
+            print(f"FAILED: Feed timed out after {max_retries} attempts")
+            sys.exit(1)
+    except Exception as e:
+        print(f"Error on attempt {attempt + 1}: {e}")
+        if attempt == max_retries - 1:
+            print(f"FAILED to fetch feed after {max_retries} attempts")
+            sys.exit(1)
 
 # Парсим фид
 items = []
