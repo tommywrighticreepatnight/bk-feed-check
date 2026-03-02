@@ -18,7 +18,7 @@ jobs:
       
       - run: pip install requests pandas openpyxl
       
-      - run: python carero_checker.py
+      - run: python feed_checker.py
         env:
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
@@ -28,7 +28,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: inventory-report
-          path: CARERO_INVENTORY_*.xlsx
+          path: FEED_INVENTORY_*.xlsx
       
       - name: Commit updated state
         run: |
