@@ -8,7 +8,7 @@ import json
 
 # CONFIG
 FEED_URL = "https://b2b.dvedeti.cz/36365?password=36365"
-MY_SKUS_FILE = "my_skus.xlsx"
+MY_SKUS_FILE = "my_skus.csv"
 CRITICAL_STOCK = 0
 WARNING_STOCK = 3
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
