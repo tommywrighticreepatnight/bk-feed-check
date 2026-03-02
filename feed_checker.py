@@ -15,9 +15,6 @@ BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
 RECIPIENT_EMAILS = [e.strip() for e in os.environ.get("RECIPIENT_EMAILS", "").split(",") if e.strip()]
 
 print("Fetching DveDeti feed...")
-print(f"URL: {FEED_URL}")
-
-# Загрузка фида (таймаут 120 сек)
 try:
     r = requests.get(FEED_URL, timeout=120)
     r.raise_for_status()
@@ -27,54 +24,55 @@ except Exception as e:
     print(f"FAILED to fetch feed: {e}")
     sys.exit(1)
 
-# ОЧИСТКА XML ОТ НЕВАЛИДНЫХ СИМВОЛОВ (частая проблема в чешских фидах)
+# Очистка от невалидных символов (часто в чешских фидах)
 print("Cleaning XML...")
 try:
     xml_str = xml_content.decode('utf-8', errors='ignore')
-    # Удаляем невалидные XML символы
     xml_str = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', xml_str)
-    # Удаляем дублирующиеся декларации
+    # Удаляем первую XML декларацию
     xml_str = re.sub(r'<\?xml[^>]+\?>', '', xml_str, count=1)
 except Exception as e:
     print(f"XML decode failed: {e}")
     sys.exit(1)
 
-# ПАРСИНГ ЧЕРЕЗ ElementTree (В 100 РАЗ БЫСТРЕЕ РЕГУЛЯРОК)
-print("Parsing XML with ElementTree...")
+# ПАРСИНГ ЧЕРЕЗ ИТЕРАТОР (память-эффективный для 88 МБ)
+print("Parsing SHOPITEM elements...")
 items = []
 try:
-    root = ET.fromstring(xml_str)
-    # Ищем ВСЕ <PRODUKT> на любом уровне
-    for produkt in root.iter('PRODUKT'):
-        kod_elem = produkt.find('KOD')
-        stock_elem = produkt.find('POCETNASKLADE')
-        name_elem = produkt.find('NAZEV')
+    # Оборачиваем в <root> если нет единого корня
+    if not xml_str.strip().startswith('<'):
+        raise ET.ParseError("Empty XML")
+    
+    # Ищем все <SHOPITEM> напрямую через регулярку (быстрее для огромных файлов)
+    for match in re.finditer(r'<SHOPITEM>(.*?)</SHOPITEM>', xml_str, re.DOTALL):
+        block = match.group(1)
+        kod = re.search(r'<KOD>([^<]+)</KOD>', block)
+        stock = re.search(r'<POCETNASKLADE>([^<]+)</POCETNASKLADE>', block)
+        name = re.search(r'<PRODUCT>([^<]+)</PRODUCT>', block)  # ВНИМАНИЕ: тег называется PRODUCT, не NAZEV
         
-        if kod_elem is not None and kod_elem.text and stock_elem is not None and stock_elem.text:
+        if kod and stock:
             try:
-                stock = int(stock_elem.text.strip())
-                sku = kod_elem.text.strip().upper()
-                name = name_elem.text.strip() if name_elem is not None and name_elem.text else "Unknown"
-                items.append({"sku": sku, "stock": stock, "name": name})
+                sku = kod.group(1).strip().upper()
+                stock_val = int(stock.group(1).strip())
+                product_name = name.group(1).strip() if name else "Unknown"
+                items.append({"sku": sku, "stock": stock_val, "name": product_name})
             except:
                 continue
-except ET.ParseError as e:
-    print(f"XML parse error: {e}")
-    print("Trying fallback regex parser (slower)...")
-    # Fallback на регулярки ТОЛЬКО для нужных тегов
-    for match in re.finditer(r'<KOD>([^<]+)</KOD>.*?<POCETNASKLADE>([^<]+)</POCETNASKLADE>.*?<NAZEV>([^<]+)</NAZEV>', xml_str, re.DOTALL | re.IGNORECASE):
-        try:
-            sku = match.group(1).strip().upper()
-            stock = int(match.group(2).strip())
-            name = match.group(3).strip()
-            items.append({"sku": sku, "stock": stock, "name": name})
-        except:
-            continue
+except Exception as e:
+    print(f"Parsing failed: {e}")
+    sys.exit(1)
 
 print(f"Parsed {len(items)} products")
 
 if len(items) == 0:
-    print("ERROR: No products parsed. Showing sample of feed:")
+    print("ERROR: No products parsed. Checking for your SKUs in raw feed...")
+    sample_skus = ['MI06', 'MR03S', 'UG70100', 'BJF151']
+    for sku in sample_skus:
+        if sku in xml_str:
+            print(f"  ✓ SKU '{sku}' FOUND in feed")
+        else:
+            print(f"  ✗ SKU '{sku}' NOT FOUND")
+    print("\nFirst 1000 chars of feed:")
     print(xml_str[:1000])
     sys.exit(1)
 
@@ -90,6 +88,7 @@ if not current:
     print("WARNING: No matching SKUs found")
     print(f"First 3 feed SKUs: {[i['sku'] for i in items[:3]]}")
     print(f"Your SKUs: {my_skus[:3]}")
+    print("\n💡 FIX: Your SKUs must match <KOD> values EXACTLY (case/spaces)")
     sys.exit(1)
 
 print(f"Tracking {len(current)} of your SKUs")
@@ -143,7 +142,7 @@ today = datetime.now().strftime("%Y%m%d")
 report_file = f"DVEDETI_INVENTORY_{today}.xlsx"
 df.to_excel(report_file, index=False)
 
-print(f"\n✅ DONE in {datetime.now().strftime('%H:%M:%S')}")
+print(f"\n✅ DONE")
 print(f"Report: {report_file}")
 print(f"Out of stock: {len([r for r in report if r['Alert Level'] == 'OUT OF STOCK'])}")
 print(f"Dangerous (<=3): {len([r for r in report if r['Alert Level'] == 'DANGEROUS'])}")
@@ -176,3 +175,5 @@ if new_out_of_stock and BREVO_API_KEY and RECIPIENT_EMAILS:
             print(f"Brevo failed: {response.status_code}")
     except Exception as e:
         print(f"Email error: {e}")
+elif not new_out_of_stock:
+    print("No new out-of-stock items — skipping email")
