@@ -1,0 +1,36 @@
+name: Daily Yedoo Check
+on:
+  schedule:
+    - cron: '15 6 * * *'   # 06:15 UTC (на 15 мин позже dvedeti, чтобы не пересекались)
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - run: pip install requests pandas openpyxl gspread oauth2client
+
+      - run: python feed_checker_yedoo.py
+        env:
+          YEDOO_EMAIL: ${{ secrets.YEDOO_EMAIL }}
+          YEDOO_PASS: ${{ secrets.YEDOO_PASS }}
+          GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+
+      - name: Commit updated state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add inventory_previous_yedoo.csv || true
+          git diff --quiet && git diff --staged --quiet || git commit -m "Update yedoo inventory state $(date +%Y-%m-%d)"
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
