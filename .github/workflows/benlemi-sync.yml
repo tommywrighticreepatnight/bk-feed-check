@@ -1,0 +1,31 @@
+name: benlemi-sync
+
+# Daily: fetch the LIVE Benlemi feed (runner is not sandboxed), refresh the
+# `benlemi` tab in the shared Google Sheet with pending/done status. You review
+# the tab, apply pending tag changes in Shopify, and mark rows done.
+
+on:
+  schedule:
+    - cron: "0 5 * * *"      # daily 05:00 UTC - adjust as needed
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Refresh Benlemi tab
+        env:
+          BENLEMI_FEED_URL: ${{ secrets.BENLEMI_FEED_URL }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}   # same as yedoo checker
+        run: |
+          python3 benlemi_sheet_sync.py \
+            --feed "$BENLEMI_FEED_URL" \
+            --export data/products_export_DE.csv \
+            --backend gsheet \
+            --gsheet-id 1TBHy5JnGQ1iCOXw_gV_-cl_slRJ-vWlpZUGPVpwlJ9Q \
+            --tab benlemi
