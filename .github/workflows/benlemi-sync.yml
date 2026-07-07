@@ -21,11 +21,16 @@ jobs:
       - name: Refresh Benlemi tab
         env:
           BENLEMI_FEED_URL: ${{ secrets.BENLEMI_FEED_URL }}
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}   # same as yedoo checker
+          GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}   # same secret as yedoo checker
+          # For the live Admin API source (no CSV), also add these two secrets and
+          # swap --export for --shopify-domain below:
+          # SHOPIFY_TOKEN: ${{ secrets.SHOPIFY_DE_TOKEN }}
         run: |
           python3 benlemi_sheet_sync.py \
-            --feed "$BENLEMI_FEED_URL" \
+            --times-xlsx data/benlemi_match.xlsx \
             --export data/products_export_DE.csv \
             --backend gsheet \
             --gsheet-id 1TBHy5JnGQ1iCOXw_gV_-cl_slRJ-vWlpZUGPVpwlJ9Q \
             --tab benlemi
+          # LIVE Admin API variant (replaces the --export line above):
+          #   --shopify-domain busykids-de.myshopify.com \
