@@ -39,10 +39,24 @@ def local_write(path, rows):
         w.writerows(rows)
 
 
+def _load_creds():
+    """Reuse the SAME service-account secret as the yedoo checker.
+    Accepts raw JSON or base64-encoded JSON."""
+    raw = os.environ.get("GOOGLE_SHEETS_CREDENTIALS") or os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+    if not raw:
+        raise RuntimeError("Set GOOGLE_SHEETS_CREDENTIALS (same secret the yedoo checker uses)")
+    raw = raw.strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        import base64
+        return json.loads(base64.b64decode(raw))
+
+
 def gsheet_open(sheet_id, tab):
     import gspread
     from google.oauth2.service_account import Credentials
-    info = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])  # same secret as yedoo checker
+    info = _load_creds()
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     gc = gspread.authorize(Credentials.from_service_account_info(info, scopes=scopes))
     sh = gc.open_by_key(sheet_id)
@@ -70,16 +84,30 @@ def gsheet_write(ws, rows):
 # ---- main ------------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--feed", required=True)
-    ap.add_argument("--export", required=True)
+    ap.add_argument("--feed", help="srovnej-ceny XML feed URL/path (live, partial coverage)")
+    ap.add_argument("--times-xlsx", help="benlemi_match.xlsx as the delivery-time source (full coverage)")
+    ap.add_argument("--export", help="Shopify products export CSV (one of --export / --shopify-domain)")
+    ap.add_argument("--shopify-domain", help="live Admin API source, e.g. shop.myshopify.com (needs SHOPIFY_TOKEN)")
     ap.add_argument("--backend", choices=["gsheet", "local"], default="gsheet")
     ap.add_argument("--gsheet-id")
     ap.add_argument("--tab", default="benlemi")
     ap.add_argument("--sheet-csv", help="local backend: path acting as the sheet")
     a = ap.parse_args()
 
-    feed = load_feed(a.feed)
-    products = load_export(a.export)
+    if a.times_xlsx:
+        from benlemi_pipeline import load_times_xlsx
+        feed = load_times_xlsx(a.times_xlsx)      # barcode -> resolved delivery window
+    elif a.feed:
+        feed = load_feed(a.feed)
+    else:
+        ap.error("provide --times-xlsx (benlemi_match) or --feed (XML)")
+    if a.shopify_domain:
+        from benlemi_shopify import load_products_shopify
+        products = load_products_shopify(a.shopify_domain)   # tags + EAN live, no export file
+    elif a.export:
+        products = load_export(a.export)
+    else:
+        ap.error("provide --shopify-domain (live) or --export (CSV file)")
     decisions = [(p, decide(p, feed)) for p in products.values()]
 
     if a.backend == "local":
