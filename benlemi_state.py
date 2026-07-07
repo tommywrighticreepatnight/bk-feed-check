@@ -19,7 +19,7 @@ back to `pending` automatically.
 """
 from datetime import datetime, timezone
 
-HEADER = ["Handle", "Title", "Matched", "Feed", "Current", "Target",
+HEADER = ["Handle", "SKU", "Title", "Matched", "Feed", "Current", "Target",
           "Action", "Status", "Note", "Sig", "Checked"]
 
 # statuses the tool sets; human may switch pending->done (or review->done)
@@ -96,6 +96,7 @@ def build_rows(decisions, prior_by_handle, include_kinds=None):
         action, status, sig = transition(dec, prior_by_handle.get(prod["handle"]))
         rows.append({
             "Handle": prod["handle"],
+            "SKU": prod.get("sku", ""),
             "Title": prod["title"],
             "Matched": dec["matched"],
             "Feed": dec["feed_str"],
