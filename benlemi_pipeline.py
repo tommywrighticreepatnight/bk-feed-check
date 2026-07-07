@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """benlemi_pipeline.py — load feed + Shopify products, decide target tag per product."""
-import csv, urllib.request
+import csv, re, urllib.request
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from benlemi_core import resolve_availability, NON_MANAGED_SKLAD, TAG_RANK
 
 VENDOR_MATCH = "benlemi"
+
+
+def _base_sku(skus):
+    """Representative SKU for orientation: first variant SKU trimmed before ' size '."""
+    if not skus:
+        return ""
+    return re.split(r"\s+size\s+", skus[0], flags=re.I)[0].strip().rstrip(",")
 PART_MARKER = "part"
 
 
@@ -51,9 +58,11 @@ def load_export(path):
         tags_str = next((r["Tags"] for r in rr if r["Tags"].strip()), "")
         tags = [t.strip() for t in tags_str.split(",") if t.strip()]
         eans = [r["Variant Barcode"].strip() for r in rr if r["Variant Barcode"].strip()]
+        skus = [r["Variant SKU"].strip() for r in rr if r["Variant SKU"].strip()]
         sklad = [t for t in tags if t.startswith("sklad:")]
         products[handle] = dict(handle=handle, title=title, vendor=vendor, tags=tags,
-                                eans=eans, sklad_current=sklad[0] if sklad else "",
+                                eans=eans, sku=_base_sku(skus),
+                                sklad_current=sklad[0] if sklad else "",
                                 has_part=any(PART_MARKER in t for t in tags))
     return products
 
