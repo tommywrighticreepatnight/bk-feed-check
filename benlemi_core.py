@@ -16,6 +16,8 @@ WINDOW_TO_TAG = {
     (5, 7):  "sklad:preorder8",
     (6, 8):  "sklad:preorder4",
     (8, 10): "sklad:preorder5",
+    (1, 1):  "sklad:preorder1",   # Benlemi "1 weeks"
+    (3, 6):  "sklad:preorder2",   # Benlemi "3 - 6 weeks" -> nearest 4-6
 }
 # Tags this automation is allowed to set/replace (the Benlemi week-window tags).
 MANAGED_TAGS = set(WINDOW_TO_TAG.values())
@@ -33,31 +35,32 @@ _INSTOCK = ("in stock", "skladem", "in stock >5", "in stock <5")
 
 def resolve_availability(in_stock_text, out_text):
     """
-    Return dict(state, wmin, wmax, tag, note).
-    state: 'in_stock' -> remove sklad tag | 'dispatch' -> map window | 'flag' -> manual.
-
-    ASSUMPTION (confirm against full XML): current state is read from
-    AVAILABILITY_OUT_OF_STOCK. Empty / 'In stock' there => item is in stock now.
-    A parseable 'X-Y weeks' => dispatch window. 'Ask us'/other => flag.
+    Current availability comes from AVAILABILITY_OUT_OF_STOCK (authoritative in
+    this feed); AVAILABILITY_IN_STOCK is a static "In stock" label on every item.
+    Rules:
+      OUT contains "In stock"  -> in stock now      -> remove sklad tag
+      OUT has "X - Y weeks"     -> dispatch/produce  -> map (min,max) window
+      "Ask us" / empty / other  -> flag (manual)
+    ("Dispatch within..." and "Produce within..." both carry the week window.)
     """
     out = (out_text or "").strip()
-    low = out.lower()
-
-    if low == "" or low in _INSTOCK:
+    text = out if out else (in_stock_text or "").strip()
+    low = text.lower()
+    if low == "":
+        return dict(state="flag", wmin=None, wmax=None, tag=None, note="empty availability")
+    if "in stock" in low or low == "skladem" or "day" in low or "hod" in low:
         return dict(state="in_stock", wmin=None, wmax=None, tag=None, note="in stock -> remove sklad tag")
 
-    m = _RANGE.search(out) or _SINGLE.search(out)
+    m = _RANGE.search(text) or _SINGLE.search(text)
     if not m:
-        return dict(state="flag", wmin=None, wmax=None, tag=None, note=f"unmapped availability: {out!r}")
+        return dict(state="flag", wmin=None, wmax=None, tag=None, note=f"unmapped availability: {text!r}")
     if m.re is _RANGE:
         wmin, wmax = int(m.group(1)), int(m.group(2))
     else:
         wmin = wmax = int(m.group(1))
-
     tag = WINDOW_TO_TAG.get((wmin, wmax))
     if not tag:
-        return dict(state="flag", wmin=wmin, wmax=wmax, tag=None,
-                    note=f"window {wmin}-{wmax}w has no matching tag")
+        return dict(state="flag", wmin=wmin, wmax=wmax, tag=None, note=f"window {wmin}-{wmax}w has no matching tag")
     return dict(state="dispatch", wmin=wmin, wmax=wmax, tag=tag, note="")
 
 
