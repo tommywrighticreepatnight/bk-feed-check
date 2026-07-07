@@ -19,13 +19,22 @@ def load_feed(src):
         data = open(src, "rb").read()
     root = ET.fromstring(data)
     feed = {}
+    def txt(el):
+        return (el.text or "").strip() if el is not None else ""
     for item in root.iter("SHOPITEM"):
-        ean = (item.findtext("EAN") or "").strip()
-        if not ean:
-            continue
-        ins = (item.findtext("AVAILABILITY_IN_STOCK") or "").strip()
-        out = (item.findtext("AVAILABILITY_OUT_OF_STOCK") or "").strip()
-        feed[ean] = resolve_availability(ins, out)
+        variants = item.findall(".//VARIANT")
+        if variants:                      # EAN + availability live per variant
+            for v in variants:
+                ean = txt(v.find("EAN"))
+                if not ean:
+                    continue
+                feed[ean] = resolve_availability(txt(v.find("AVAILABILITY_IN_STOCK")),
+                                                 txt(v.find("AVAILABILITY_OUT_OF_STOCK")))
+        else:                             # simple item, EAN at top level
+            ean = txt(item.find("EAN"))
+            if ean:
+                feed[ean] = resolve_availability(txt(item.find("AVAILABILITY_IN_STOCK")),
+                                                 txt(item.find("AVAILABILITY_OUT_OF_STOCK")))
     return feed
 
 
@@ -106,3 +115,21 @@ def decide(prod, feed):
         return dict(kind="NO_CHANGE", target=target, detail="in sync", feed_str=feed_str, matched=m)
     return dict(kind="CHANGE", target=target,
                 detail=f"{cur or '(none)'} -> {target or '(remove)'}", feed_str=feed_str, matched=m)
+
+
+def load_times_xlsx(path, barcode_col=3, time_col=34, sheet="Benlemi"):
+    """benlemi_match.xlsx -> {barcode: resolved_dict}. Keyed by the BusyKids
+    barcode (= Shopify Variant Barcode), value = resolved 'time of sending'.
+    Same shape as load_feed output, so the rest of the pipeline is unchanged."""
+    import openpyxl
+    wb = openpyxl.load_workbook(path, data_only=True)
+    ws = wb[sheet]
+    out = {}
+    for r in ws.iter_rows(min_row=2, values_only=True):
+        if not r or not any(r):
+            continue
+        bar = str(r[barcode_col]).strip() if r[barcode_col] is not None else ""
+        tos = str(r[time_col]).strip() if r[time_col] is not None else ""
+        if bar:
+            out[bar] = resolve_availability("", tos)
+    return out
